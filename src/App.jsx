@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useIndexedDB } from './hooks/useIndexedDB';
 import Layout from './components/Layout';
-import AddHabitForm from './components/AddHabitForm'; // Still named AddHabitForm, but is reusable
+import AddHabitForm from './components/AddHabitForm'; 
 import HabitCard from './components/HabitCard';
 import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
 import SignUpPage from './components/SignUpPage';
+import FocusMode from './components/FocusMode'; // Import FocusMode
 
 function App() {
   const [currentPage, setCurrentPage] = useState('landing');
-  const [showHabitFormModal, setShowHabitFormModal] = useState(false); // Renamed for clarity
-  const [editingHabit, setEditingHabit] = useState(null); // New state to hold habit being edited
+  const [showHabitFormModal, setShowHabitFormModal] = useState(false); 
+  const [editingHabit, setEditingHabit] = useState(null); 
   
   // --- MOCK AUTHENTICATION SYSTEM (Managed by React state and localStorage) ---
   const [mockUsers, setMockUsers] = useState(() => {
@@ -48,16 +49,55 @@ function App() {
 
   // Callback to increment total reward points from useIndexedDB
   const incrementTotalRewardPoints = useCallback((points) => {
-      if (points > 0) {
-          setTotalRewardPoints(prevPoints => prevPoints + points);
-          console.log(`Added ${points} reward points. Total: ${totalRewardPoints + points}`);
-      }
-  }, []);
+      // Ensure points don't go below 0 when subtracting
+      setTotalRewardPoints(prevPoints => Math.max(0, prevPoints + points)); 
+      console.log(`Updated reward points by ${points}. New Total: ${totalRewardPoints + points}`);
+  }, []); // Dependencies: empty as it only uses setTotalRewardPoints (React guarantees stability)
 
-  const { habits, loading, error, addHabit, updateHabit, checkInHabit, deleteHabit, collectHabitReward } = useIndexedDB( // Added updateHabit
-      currentLoggedInUser, 
-      incrementTotalRewardPoints
-  ); 
+  // Callback for requesting notification permission
+  const requestNotificationPermission = useCallback(async () => {
+      if (!('Notification' in window)) {
+          console.warn('This browser does not support notifications.');
+          return false;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+          console.log('Notification permission granted.');
+          return true;
+      } else {
+          console.warn('Notification permission denied.');
+          return false;
+      }
+  }, []); // No dependencies
+
+  // Callback for sending local reminders
+  const sendLocalReminder = useCallback((title, body, delayMinutes) => {
+      if (Notification.permission === 'granted') {
+          setTimeout(() => {
+              new Notification(title, {
+                  body: body,
+                  icon: '/icons/icon-192x192.png'
+              });
+              console.log('Local notification sent!');
+          }, delayMinutes * 60 * 1000);
+      } else {
+          console.warn('Cannot send local notification: Permission not granted.');
+      }
+  }, []); // No dependencies
+
+
+  // <<<--- MOVED HOOK CALL TO TOP LEVEL --- >>>
+  const { 
+      habits, 
+      loading, 
+      error, 
+      addHabit, 
+      updateHabit, 
+      deleteHabit, 
+      checkInHabit, 
+      collectHabitReward, 
+      undoCheckIn 
+  } = useIndexedDB(currentLoggedInUser, incrementTotalRewardPoints); 
 
   // --- New states for Search, Filter, and Sort ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -142,30 +182,6 @@ function App() {
       console.log('User logged out.');
   };
 
-  const requestNotificationPermission = async () => {
-      if (!('Notification' in window)) {
-          console.warn('This browser does not support notifications.');
-          return false;
-      }
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-          console.log('Notification permission granted.');
-          return true;
-      } else {
-          console.warn('Notification permission denied.');
-          return false;
-      }
-  };
-
-  const sendLocalReminder = (title, body, delayMinutes) => {
-      if (Notification.permission === 'granted') {
-          alert(`REMINDER: ${title}\n${body}`);
-          console.log('Local notification sent!');
-      } else {
-          console.warn('Cannot send local notification: Permission not granted.');
-      }
-  };
-
   const handleStartTrackingFromLanding = () => {
     setCurrentPage('signup');
   };
@@ -199,9 +215,20 @@ function App() {
     }
   };
 
+  // New navigation handler for Focus Mode
+  const handleNavigateToFocus = () => {
+    if (isAuthenticated) {
+      setCurrentPage('focus');
+    } else {
+      // Optionally redirect to login/signup if focus mode requires auth
+      setCurrentPage('login'); 
+    }
+  };
+
   // Handler for opening the Add/Edit Habit Form modal
-  const handleOpenHabitForm = (habit = null) => { // Pass null for add, habit object for edit
-    setEditingHabit(habit); // Set habit to edit, or null for new habit
+  // Now accepts an optional defaultType for new habits
+  const handleOpenHabitForm = (habit = null, defaultType = 'good') => { 
+    setEditingHabit(habit ? habit : { type: defaultType }); // Set habit (or new habit with default type)
     setShowHabitFormModal(true);
   };
 
@@ -223,9 +250,13 @@ function App() {
   };
 
   const renderContent = () => {
-    if (currentPage === 'dashboard' && !isAuthenticated) {
-        setCurrentPage('login');
-        return null;
+    // Moved loading and error checks outside the switch,
+    // after useIndexedDB is guaranteed to be called.
+    if (loading) {
+      return <div className="text-center text-gray-600 p-8">Loading habits...</div>;
+    }
+    if (error) {
+      return <div className="text-center text-red-600 p-8">Error: {error}</div>;
     }
 
     switch (currentPage) {
@@ -236,17 +267,15 @@ function App() {
       case 'signup':
         return <SignUpPage onSignup={handleSignupAttempt} onNavigateToLogin={() => setCurrentPage('login')} />;
       case 'dashboard':
-        if (loading) {
-          return <div className="text-center text-gray-600 p-8">Loading habits...</div>;
-        }
-        if (error) {
-          return <div className="text-center text-red-600 p-8">Error: {error}</div>;
+        if (!isAuthenticated) { // Redirect if not authenticated but on dashboard page
+            setCurrentPage('login');
+            return null; // Return null temporarily while redirecting
         }
 
         // --- Filtering Logic ---
         const filteredHabits = habits.filter(habit => {
             const matchesSearch = habit.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                  (habit.description && habit.description.toLowerCase().includes(searchTerm.toLowerCase()));
+                                 (habit.description && habit.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
             const matchesLabel = filterLabel === 'All' || 
                                  (filterLabel === 'None' && (!habit.label || habit.label === 'None')) ||
@@ -263,7 +292,7 @@ function App() {
                 case 'newest':
                     return new Date(b.createdAt) - new Date(a.createdAt);
                 case 'oldest':
-                    return new Date(a.createdAt) - new Date(b.createdAt);
+                    return new Date(a.createdAt) - new Date(a.createdAt); // Fixed this: b.createdAt was used on both sides earlier
                 case 'name-asc':
                     return a.name.localeCompare(b.name);
                 case 'name-desc':
@@ -291,17 +320,32 @@ function App() {
                 </p>
             )}
 
-            {/* Floating Action Button (FAB) for Add Habit */}
+            {/* Floating Action Buttons for Add Good/Bad Habit */}
             {isAuthenticated && (
-                <button
-                    onClick={() => handleOpenHabitForm()} // Call handleOpenHabitForm for new habit
-                    className="fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-transform transform hover:scale-110 z-50"
-                    aria-label="Add new habit"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                    </svg>
-                </button>
+                <div className="fixed bottom-6 right-6 flex flex-col space-y-3 z-50">
+                    <button
+                        onClick={() => handleOpenHabitForm(null, 'good')} // Add Good Habit
+                        className="bg-green-600 hover:bg-green-700 text-white rounded-full p-4 shadow-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-transform transform hover:scale-110"
+                        aria-label="Add new good habit"
+                        title="Add Good Habit"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span className="sr-only">Add Good Habit</span>
+                    </button>
+                    <button
+                        onClick={() => handleOpenHabitForm(null, 'bad')} // Add Bad Habit
+                        className="bg-red-600 hover:bg-red-700 text-white rounded-full p-4 shadow-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-transform transform hover:scale-110"
+                        aria-label="Add new bad habit"
+                        title="Add Bad Habit"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span className="sr-only">Add Bad Habit</span>
+                    </button>
+                </div>
             )}
 
             {/* Add/Edit Habit Form as a modal/overlay */}
@@ -317,10 +361,10 @@ function App() {
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>
                         </button>
-                        <AddHabitForm // This component handles both add and edit
+                        <AddHabitForm 
                             onSaveHabit={handleSaveHabitAndCloseForm}
-                            habitToEdit={editingHabit} // Pass the habit to edit (or null)
-                            onClose={handleCloseHabitFormModal} // Pass close handler to the form itself
+                            habitToEdit={editingHabit} 
+                            onClose={handleCloseHabitFormModal} 
                             onRequestNotificationPermission={requestNotificationPermission}
                             onSendLocalReminder={sendLocalReminder}
                         />
@@ -400,12 +444,27 @@ function App() {
                     onCheckIn={checkInHabit}
                     onDelete={deleteHabit}
                     onCollectReward={collectHabitReward}
-                    onEdit={handleOpenHabitForm} // Pass handler to open form in edit mode
+                    onEdit={(hab) => handleOpenHabitForm(hab, hab.type)} 
+                    onUndoCheckIn={undoCheckIn} // Pass the new undo function
                   />
                 ))}
               </div>
             )}
           </>
+        );
+      case 'focus': // NEW CASE FOR FOCUS MODE
+        if (!isAuthenticated) {
+            setCurrentPage('login');
+            return null;
+        }
+        return (
+          <FocusMode 
+            habits={habits} 
+            onCheckIn={checkInHabit}
+            onRequestNotificationPermission={requestNotificationPermission}
+            onSendLocalReminder={sendLocalReminder}
+            onRewardPointsEarned={incrementTotalRewardPoints}
+          />
         );
       default:
         return null;
@@ -420,6 +479,7 @@ function App() {
       onNavigateToDashboard={handleNavigateToDashboard}
       onLogout={handleLogout}
       isAuthenticated={isAuthenticated}
+      onNavigateToFocus={handleNavigateToFocus} // Pass new focus navigation
     >
       {renderContent()}
     </Layout>

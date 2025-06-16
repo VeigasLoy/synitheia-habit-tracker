@@ -6,17 +6,23 @@ const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => i + 1);
 
 // Accept habitToEdit and onSaveHabit props
-const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocalReminder, habitToEdit, onSaveHabit, onClose }) => {
+const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, habitToEdit, onSaveHabit, onClose }) => {
     // Determine if we are in edit mode
-    const isEditMode = !!habitToEdit;
+    const isEditMode = !!habitToEdit && !!habitToEdit.id; // Check for actual ID to confirm edit mode
 
     // Initialize states based on whether we are in edit mode or adding a new habit
+    // Use habitToEdit.type or default to 'good' for new habits
+    // The type is now determined by the context (add good, add bad, or edit existing)
+    // and is not directly selectable within the form.
+    const initialType = isEditMode && habitToEdit.type ? habitToEdit.type : (habitToEdit && habitToEdit.type ? habitToEdit.type : 'good');
+
+
     const [name, setName] = useState(isEditMode ? habitToEdit.name : '');
     const [description, setDescription] = useState(isEditMode ? habitToEdit.description : '');
     const [timesPerDay, setTimesPerDay] = useState(isEditMode ? habitToEdit.timesPerDay : 1);
     const [difficulty, setDifficulty] = useState(isEditMode ? habitToEdit.difficulty : 'medium');
     const [timeTaken, setTimeTaken] = useState(isEditMode ? habitToEdit.timeTaken : 15);
-    const [type, setType] = useState(isEditMode ? habitToEdit.type : 'good');
+    const [type, setType] = useState(initialType); // Use initialType for state, no longer a selectable input
     const [reminderTime, setReminderTime] = useState(isEditMode && habitToEdit.reminderTime ? habitToEdit.reminderTime : '');
 
     // States for the flexible Period feature
@@ -43,14 +49,14 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
     // Effect to update form fields when habitToEdit changes (only relevant in edit mode)
     // This ensures the form re-renders with the correct data if a different habit is selected for editing
     useEffect(() => {
-        if (isEditMode && habitToEdit) {
+        if (habitToEdit) { // Always check if habitToEdit exists, regardless of isEditMode
             setName(habitToEdit.name || '');
             setDescription(habitToEdit.description || '');
             setTimesPerDay(habitToEdit.timesPerDay || 1);
             setDifficulty(habitToEdit.difficulty || 'medium');
-            setTimeTaken(habitToEdit.timeTaken || 15);
-            setType(habitToEdit.type || 'good');
-            setReminderTime(habitToEdit.reminderTime || '');
+            setTimeTaken(habitToEdit.timeTaken || (habitToEdit.type === 'good' ? 15 : 0)); // Set timeTaken to 0 for bad habits
+            setType(habitToEdit.type || 'good'); // Update type when editing
+            setReminderTime(habitToEdit.reminderTime || ''); // Corrected typo here
             setRepeatType(habitToEdit.period?.type || 'daily');
             setSelectedDaysOfWeek(habitToEdit.period?.config?.selectedDaysOfWeek || DAYS_OF_WEEK.map((_, index) => index));
             setSelectedDaysOfMonth(habitToEdit.period?.config?.selectedDaysOfMonth || [1]);
@@ -66,10 +72,25 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
                 setShowNewLabelInput(false);
                 setNewLabelInputValue('');
             }
+        } else {
+            // Reset for new habit creation when modal reopens for new habit
+            setName('');
+            setDescription('');
+            setTimesPerDay(1);
+            setDifficulty('medium');
+            setTimeTaken(15);
+            setType('good'); // Default to good for new habits
+            setReminderTime('');
+            setRepeatType('daily');
+            setSelectedDaysOfWeek(DAYS_OF_WEEK.map((_, index) => index));
+            setSelectedDaysOfMonth([1]);
+            setIntervalDays(2);
+            setSelectedLabel('None');
+            setShowNewLabelInput(false);
+            setNewLabelInputValue('');
         }
-    }, [habitToEdit, isEditMode, availableLabels]); // Re-run when habitToEdit, mode, or availableLabels change
+    }, [habitToEdit, availableLabels]); // Re-run when habitToEdit or availableLabels change
 
-    // Handler for toggling selected days of the week
     const handleDayOfWeekToggle = (dayIndex) => {
         setSelectedDaysOfWeek(prev =>
             prev.includes(dayIndex)
@@ -78,7 +99,6 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
         );
     };
 
-    // Handler for toggling selected days of the month
     const handleDayOfMonthToggle = (day) => {
         setSelectedDaysOfMonth(prev =>
             prev.includes(day)
@@ -183,8 +203,9 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
             timesPerDay: parseInt(timesPerDay, 10),
             period: periodConfig,
             difficulty: difficulty,
-            timeTaken: parseInt(timeTaken, 10),
-            type: type,
+            // timeTaken is now conditional
+            timeTaken: type === 'good' ? parseInt(timeTaken, 10) : 0, 
+            type: type, // Type is determined by the FAB or existing habit, not form input
             rewardPoints: calculatedRewardPoints,
             label: finalLabel === 'None' ? '' : finalLabel, // Store 'None' as empty string
             createdAt: isEditMode && habitToEdit.createdAt ? habitToEdit.createdAt : new Date().toISOString(), // Preserve original creation date if editing
@@ -221,30 +242,29 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
             }
         }
 
-        // Clear form fields only if adding a new habit
-        if (!isEditMode) { 
-            setName('');
-            setDescription('');
-            setTimesPerDay(1);
-            setRepeatType('daily');
-            setSelectedDaysOfWeek(DAYS_OF_WEEK.map((_, index) => index));
-            setSelectedDaysOfMonth([1]);
-            setIntervalDays(2);
-            setDifficulty('medium');
-            setTimeTaken(15);
-            setType('good');
-            setReminderTime('');
-            setSelectedLabel('None');
-            setShowNewLabelInput(false);
-            setNewLabelInputValue('');
-        }
         onClose(); // Close the modal after saving/adding
     };
 
+    // Determine dynamic styling and text based on habit type and mode
+    const formThemeClasses = type === 'good' 
+        ? "border-green-400" 
+        : "border-red-400";
+    const titleColorClass = type === 'good' 
+        ? "text-green-700" 
+        : "text-red-700";
+    const buttonBgClass = type === 'good' 
+        ? "bg-green-600 hover:bg-green-700 focus:ring-green-500" 
+        : "bg-red-600 hover:bg-red-700 focus:ring-red-500";
+    const headerBorderClass = type === 'good'
+        ? "border-green-300"
+        : "border-red-300";
+
     return (
-        <form onSubmit={handleSubmit} className="mb-8 p-6 bg-white border border-gray-200 rounded-none shadow-none">
-            <h2 className="text-2xl font-bold mb-5 text-gray-900 border-b pb-3 border-gray-200">
-                {isEditMode ? 'Edit Habit' : 'Add New Habit'}
+        <form onSubmit={handleSubmit} className={`mb-8 p-6 bg-white border-2 rounded-none shadow-none ${formThemeClasses}`}>
+            <h2 className={`text-2xl font-bold mb-5 ${titleColorClass} border-b-2 pb-3 ${headerBorderClass}`}>
+                {isEditMode 
+                    ? `Edit ${type === 'good' ? 'Good' : 'Bad'} Habit` 
+                    : (type === 'good' ? 'Add New Good Habit' : 'Quit a New Bad Habit')}
             </h2>
             
             <div className="mb-4">
@@ -274,14 +294,16 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                    <label htmlFor="times-per-day" className="block text-sm font-medium text-gray-700 mb-1">Times per Day</label>
+                    <label htmlFor="times-per-day" className="block text-sm font-medium text-gray-700 mb-1">
+                        {type === 'good' ? 'Times per Day' : 'Limit to times per day'}
+                    </label>
                     <input
                         type="number"
                         id="times-per-day"
                         className="w-full px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-base"
                         value={timesPerDay}
-                        onChange={(e) => setTimesPerDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                        min="1"
+                        onChange={(e) => setTimesPerDay(Math.max(type === 'good' ? 1 : 0, parseInt(e.target.value, 10) || (type === 'good' ? 1 : 0)))}
+                        min={type === 'good' ? "1" : "0"}
                     />
                 </div>
                 <div>
@@ -299,31 +321,24 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label htmlFor="time-taken" className="block text-sm font-medium text-gray-700 mb-1">Time Taken (minutes)</label>
-                    <input
-                        type="number"
-                        id="time-taken"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-base"
-                        value={timeTaken}
-                        onChange={(e) => setTimeTaken(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                        min="0"
-                    />
+            {/* Conditional rendering for Time Taken */}
+            {type === 'good' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label htmlFor="time-taken" className="block text-sm font-medium text-gray-700 mb-1">Time Taken (minutes)</label>
+                        <input
+                            type="number"
+                            id="time-taken"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-base"
+                            value={timeTaken}
+                            onChange={(e) => setTimeTaken(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                            min="0"
+                        />
+                    </div>
+                    {/* The other column of the grid will be empty or can be filled as needed for good habits */}
+                    <div></div> 
                 </div>
-                <div>
-                    <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-1">Habit Type</label>
-                    <select
-                        id="type"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-base bg-white"
-                        value={type}
-                        onChange={(e) => setType(e.target.value)}
-                    >
-                        <option value="good">Good Habit</option>
-                        <option value="bad">Bad Habit</option>
-                    </select>
-                </div>
-            </div>
+            )}
 
             {/* REWARD POINTS INPUT REMOVED - it's now calculated internally */}
             {/* Display the calculated reward points as read-only feedback */}
@@ -467,9 +482,9 @@ const AddHabitForm = ({ onAddHabit, onRequestNotificationPermission, onSendLocal
             <div className="flex space-x-3">
                 <button
                     type="submit"
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className={`flex-1 text-white font-semibold py-3 px-4 rounded-sm focus:outline-none focus:ring-1 ${buttonBgClass}`}
                 >
-                    {isEditMode ? 'Save Changes' : 'Add Habit'}
+                    {isEditMode ? 'Save Changes' : `Add ${type === 'good' ? 'Good' : 'Bad'} Habit`}
                 </button>
                 {isEditMode && (
                     <button
