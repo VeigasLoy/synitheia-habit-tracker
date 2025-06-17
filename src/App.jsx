@@ -6,7 +6,36 @@ import HabitCard from './components/HabitCard';
 import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
 import SignUpPage from './components/SignUpPage';
-import FocusMode from './components/FocusMode'; // Import FocusMode
+import FocusMode from './components/FocusMode'; // Import the new FocusMode component
+
+const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+        console.warn('This browser does not support notifications.');
+        return false;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+        console.log('Notification permission granted.');
+        return true;
+    } else {
+        console.warn('Notification permission denied.');
+        return false;
+    }
+};
+
+const sendLocalReminder = (title, body, delayMinutes) => {
+    if (Notification.permission === 'granted') {
+        setTimeout(() => {
+            new Notification(title, {
+                body: body,
+                icon: '/icons/icon-192x192.png'
+            });
+            console.log('Local notification sent!');
+        }, delayMinutes * 60 * 1000); // delayMinutes * 60 seconds/minute * 1000 ms/second
+    } else {
+        console.warn('Cannot send local notification: Permission not granted.');
+    }
+};
 
 function App() {
   const [currentPage, setCurrentPage] = useState('landing');
@@ -34,59 +63,11 @@ function App() {
     }
   });
 
-  const [totalRewardPoints, setTotalRewardPoints] = useState(() => {
-      if (currentLoggedInUser) {
-          try {
-              const storedPoints = localStorage.getItem(`userPoints_${currentLoggedInUser}`);
-              return storedPoints ? parseInt(storedPoints, 10) : 0;
-          } catch (e) {
-              console.error(`Failed to load points for ${currentLoggedInUser} from localStorage on init`, e);
-              return 0;
-          }
-      }
-      return 0;
-  });
-
-  // Callback to increment total reward points from useIndexedDB
-  const incrementTotalRewardPoints = useCallback((points) => {
-      // Ensure points don't go below 0 when subtracting
-      setTotalRewardPoints(prevPoints => Math.max(0, prevPoints + points)); 
-      console.log(`Updated reward points by ${points}. New Total: ${totalRewardPoints + points}`);
-  }, []); // Dependencies: empty as it only uses setTotalRewardPoints (React guarantees stability)
-
-  // Callback for requesting notification permission
-  const requestNotificationPermission = useCallback(async () => {
-      if (!('Notification' in window)) {
-          console.warn('This browser does not support notifications.');
-          return false;
-      }
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-          console.log('Notification permission granted.');
-          return true;
-      } else {
-          console.warn('Notification permission denied.');
-          return false;
-      }
-  }, []); // No dependencies
-
-  // Callback for sending local reminders
-  const sendLocalReminder = useCallback((title, body, delayMinutes) => {
-      if (Notification.permission === 'granted') {
-          setTimeout(() => {
-              new Notification(title, {
-                  body: body,
-                  icon: '/icons/icon-192x192.png'
-              });
-              console.log('Local notification sent!');
-          }, delayMinutes * 60 * 1000);
-      } else {
-          console.warn('Cannot send local notification: Permission not granted.');
-      }
-  }, []); // No dependencies
-
+  // Removed totalRewardPoints state from here, it will be managed by useIndexedDB
+  // Removed incrementTotalRewardPoints callback from here, it will be handled by useIndexedDB
 
   // <<<--- MOVED HOOK CALL TO TOP LEVEL --- >>>
+  // useIndexedDB now provides and manages totalRewardPoints
   const { 
       habits, 
       loading, 
@@ -96,8 +77,10 @@ function App() {
       deleteHabit, 
       checkInHabit, 
       collectHabitReward, 
-      undoCheckIn 
-  } = useIndexedDB(currentLoggedInUser, incrementTotalRewardPoints); 
+      undoCheckIn,
+      totalRewardPoints, // Get totalRewardPoints from the hook
+      earnRewardPoints // Get the function to update reward points
+  } = useIndexedDB(currentLoggedInUser); // Pass currentLoggedInUser to the hook
 
   // --- New states for Search, Filter, and Sort ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -127,28 +110,20 @@ function App() {
     try {
       if (currentLoggedInUser) {
         localStorage.setItem('loggedInUser', currentLoggedInUser);
-        localStorage.setItem(`userPoints_${currentLoggedInUser}`, totalRewardPoints.toString());
+        // Removed localStorage.setItem for userPoints as it's now handled by IndexedDB via useIndexedDB
       } else {
         localStorage.removeItem('loggedInUser');
       }
     } catch (e) {
-      console.error("Effect: Failed to save loggedInUser or userPoints to localStorage", e);
+      console.error("Effect: Failed to save loggedInUser to localStorage", e);
     }
-  }, [currentLoggedInUser, totalRewardPoints]);
+  }, [currentLoggedInUser]); // totalRewardPoints removed from dependency array here
 
+  // Debugging log for totalRewardPoints in App.jsx
   useEffect(() => {
-      if (currentLoggedInUser) {
-          try {
-              const storedPoints = localStorage.getItem(`userPoints_${currentLoggedInUser}`);
-              setTotalRewardPoints(storedPoints ? parseInt(storedPoints, 10) : 0);
-          } catch (e) {
-              console.error(`Failed to load points for ${currentLoggedInUser} on user change`, e);
-              setTotalRewardPoints(0);
-          }
-      } else {
-          setTotalRewardPoints(0);
-      }
-  }, [currentLoggedInUser]);
+      console.log(`[App] totalRewardPoints state updated: ${totalRewardPoints}`);
+  }, [totalRewardPoints]);
+
 
   const isAuthenticated = !!currentLoggedInUser;
 
@@ -292,7 +267,7 @@ function App() {
                 case 'newest':
                     return new Date(b.createdAt) - new Date(a.createdAt);
                 case 'oldest':
-                    return new Date(a.createdAt) - new Date(a.createdAt); // Fixed this: b.createdAt was used on both sides earlier
+                    return new Date(a.createdAt) - new Date(b.createdAt);
                 case 'name-asc':
                     return a.name.localeCompare(b.name);
                 case 'name-desc':
@@ -375,11 +350,11 @@ function App() {
             <h2 className="text-2xl font-semibold text-gray-800 mb-5 mt-8">Your Habits</h2>
 
             {/* Search, Filter, Sort Controls */}
-            <div className="mb-6 p-4 bg-white border border-gray-200 rounded-none grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="mb-6 p-4 bg-white border border-gray-200 rounded-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <input
                     type="text"
                     placeholder="Search habits..."
-                    className="col-span-full sm:col-span-2 lg:col-span-4 px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="col-span-full sm:col-span-2 lg:col-span-4 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -388,7 +363,7 @@ function App() {
                     <label htmlFor="filter-label" className="block text-sm font-medium text-gray-700 mb-1">Filter by Label</label>
                     <select
                         id="filter-label"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-base bg-white"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-base bg-white"
                         value={filterLabel}
                         onChange={(e) => setFilterLabel(e.target.value)}
                     >
@@ -402,7 +377,7 @@ function App() {
                     <label htmlFor="filter-type" className="block text-sm font-medium text-gray-700 mb-1">Filter by Type</label>
                     <select
                         id="filter-type"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-base bg-white"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-base bg-white"
                         value={filterType}
                         onChange={(e) => setFilterType(e.target.value)}
                     >
@@ -416,7 +391,7 @@ function App() {
                     <label htmlFor="sort-order" className="block text-sm font-medium text-gray-700 mb-1">Sort by</label>
                     <select
                         id="sort-order"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-base bg-white"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-base bg-white"
                         value={sortOrder}
                         onChange={(e) => setSortOrder(e.target.value)}
                     >
@@ -432,7 +407,7 @@ function App() {
 
 
             {sortedHabits.length === 0 ? (
-              <p className="text-center text-gray-500 p-6 border border-dashed border-gray-300 rounded-none bg-gray-50">
+              <p className="text-center text-gray-500 p-6 border border-dashed border-gray-300 rounded-lg bg-gray-50">
                   No habits found matching your criteria.
               </p>
             ) : (
@@ -452,8 +427,8 @@ function App() {
             )}
           </>
         );
-      case 'focus': // NEW CASE FOR FOCUS MODE
-        if (!isAuthenticated) {
+      case 'focus':
+        if (!isAuthenticated) { // Redirect if not authenticated
             setCurrentPage('login');
             return null;
         }
@@ -463,7 +438,7 @@ function App() {
             onCheckIn={checkInHabit}
             onRequestNotificationPermission={requestNotificationPermission}
             onSendLocalReminder={sendLocalReminder}
-            onRewardPointsEarned={incrementTotalRewardPoints}
+            onRewardPointsEarned={earnRewardPoints} // Pass earnRewardPoints from useIndexedDB
           />
         );
       default:
@@ -480,6 +455,7 @@ function App() {
       onLogout={handleLogout}
       isAuthenticated={isAuthenticated}
       onNavigateToFocus={handleNavigateToFocus} // Pass new focus navigation
+      totalRewardPoints={totalRewardPoints} // Pass totalRewardPoints from useIndexedDB
     >
       {renderContent()}
     </Layout>

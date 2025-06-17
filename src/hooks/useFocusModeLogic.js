@@ -2,13 +2,34 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import useTimer from './useTimer';
 import useFullscreenEnforcer from './useFullscreenEnforcer';
 
+const motivationalMessages = { // Moved outside the hook as it's a constant
+    'focus': [
+        "Deep work fuels great achievements.",
+        "Stay sharp, stay focused.",
+        "Every minute counts. Make it count for you.",
+        "Distraction is the enemy of progress.",
+        "You've got this!"
+    ],
+    'shortBreak': [
+        "Breathe. Recharge. Reset.",
+        "A quick pause makes you stronger.",
+        "Stretch it out, you earned it.",
+        "Ready for the next sprint?"
+    ],
+    'longBreak': [
+        "Enjoy your well-deserved rest.",
+        "Relax, reflect, re-energize.",
+        "You're building momentum!"
+    ]
+};
+
 const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission, onSendLocalReminder, onRewardPointsEarned }) => {
     // Timer durations in seconds
     const [focusDuration, setFocusDuration] = useState(25 * 60); // Default to 25 minutes
     const [breakDuration, setBreakDuration] = useState(5 * 60);  // Default to 5 minutes
     const [longBreakDuration, setLongBreakDuration] = useState(15 * 60); // Default to 15 minutes
 
-    const [sessionType, setSessionType] = useState('focus'); // 'focus' or 'break'
+    const [sessionType, setSessionType] = useState('focus'); // 'focus', 'shortBreak', or 'longBreak'
     const [pomodoroCount, setPomodoroCount] = useState(0); // Tracks completed focus sessions
     const [selectedHabitId, setSelectedHabitId] = useState(''); // Habit selected for current focus session
 
@@ -21,20 +42,117 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
     const [totalSessionsToComplete, setTotalSessionsToComplete] = useState(1);
     const [showSessionCountInput, setShowSessionCountInput] = useState(true); // Controls the setup form visibility
     const [showContinueSessionPrompt, setShowContinueSessionPrompt] = useState(false);
+    // NEW: State to manage the cooldown after a break when user is not present
+    const [isBreakCooldownActive, setIsBreakCooldownActive] = useState(false);
+
 
     const isFocusActiveAndFullScreen = useRef(false); 
     const isConfirmingExit = useRef(false); 
 
-    const { enforceFullscreen, isFullscreenAttemptInProgress } = useFullscreenEnforcer(); // Get the new ref
+    const { enforceFullscreen, isFullscreenAttemptInProgress } = useFullscreenEnforcer();
 
     // Ref to hold the latest handleSessionEnd function to avoid circular dependencies
     const handleSessionEndRef = useRef();
 
+    // NEW: Ref for timeouts related to break end cooldown or modal interaction
+    const modalInteractionTimeoutRef = useRef(null);
+
+    // NEW: Refs to get latest state values inside setTimeout closures
+    const showFullscreenPromptModalRef = useRef(showFullscreenPromptModal);
+    const isBreakCooldownActiveRef = useRef(isBreakCooldownActive);
+
+    // Update refs whenever state changes
+    useEffect(() => {
+        showFullscreenPromptModalRef.current = showFullscreenPromptModal;
+    }, [showFullscreenPromptModal]);
+
+    useEffect(() => {
+        isBreakCooldownActiveRef.current = isBreakCooldownActive;
+    }, [isBreakCooldownActive]);
+
+
     const timer = useTimer(
-        sessionType === 'focus' ? focusDuration : breakDuration,
+        // Determine duration based on the specific sessionType
+        sessionType === 'focus' ? focusDuration : 
+        (sessionType === 'shortBreak' ? breakDuration : longBreakDuration), 
         () => handleSessionEndRef.current(),
-        showFullscreenPromptModal || showContinueSessionPrompt || showExitConfirmationModal // Pause if any modal is active
+        // Pause if any modal is active OR if break cooldown is active
+        showFullscreenPromptModal || showContinueSessionPrompt || showExitConfirmationModal || isBreakCooldownActive 
     );
+
+    // Moved resetTimer here so it's defined before other functions use it
+    const resetTimer = useCallback(() => {
+        timer.reset(focusDuration);
+        setSessionType('focus');
+        setPomodoroCount(0);
+        setSelectedHabitId('');
+        setBreaksTakenInCurrentFocus(0);
+        setEventHandledForCurrentInterruption(false); 
+        setRemainingFocusTimeBeforeBreak(0); 
+        setIsBreakCooldownActive(false); // Ensure cooldown is reset
+
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(err => console.error("Error exiting fullscreen on reset:", err));
+        }
+        isFocusActiveAndFullScreen.current = false;
+        setShowExitConfirmationModal(false);
+        isConfirmingExit.current = false;
+        setShowFullscreenPromptModal(false);
+        setShowSessionCountInput(true); // Return to setup screen on full reset
+        setShowContinueSessionPrompt(false);
+        
+        // Clear any pending modal interaction/cooldown timeouts
+        if (modalInteractionTimeoutRef.current) {
+            clearTimeout(modalInteractionTimeoutRef.current);
+            modalInteractionTimeoutRef.current = null;
+        }
+    }, [focusDuration, timer]);
+
+    // Ref for the break end notification timeout (different from modalInteractionTimeoutRef)
+    const breakEndNotificationTimeoutRef = useRef(null); 
+
+    // Cleanup notification timeout on unmount
+    useEffect(() => {
+        return () => {
+            if (breakEndNotificationTimeoutRef.current) {
+                clearTimeout(breakEndNotificationTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    // Effect to handle break end notifications (e.g., 10 seconds before break ends)
+    useEffect(() => {
+        // Clear any existing notification timeout if session type changes or timer stops
+        if (breakEndNotificationTimeoutRef.current) {
+            clearTimeout(breakEndNotificationTimeoutRef.current);
+            breakEndNotificationTimeoutRef.current = null;
+        }
+
+        const NOTIFICATION_BEFORE_END_SECONDS = 10;
+
+        // Check if we are in a break session and timer is running
+        if (timer.isRunning && (sessionType === 'shortBreak' || sessionType === 'longBreak')) {
+            // Schedule the notification only if timeLeft is greater than the notification threshold
+            if (timer.timeLeft > NOTIFICATION_BEFORE_END_SECONDS) {
+                const timeToScheduleNotification = (timer.timeLeft - NOTIFICATION_BEFORE_END_SECONDS) * 1000;
+                const currentBreakType = sessionType;
+                const notificationSecondsRemaining = NOTIFICATION_BEFORE_END_SECONDS;
+
+                breakEndNotificationTimeoutRef.current = setTimeout(async () => {
+                    const notificationTitle = `${currentBreakType === 'shortBreak' ? 'Short' : 'Long'} Break Ending Soon!`;
+                    const notificationBody = `You have ${notificationSecondsRemaining} seconds left. Get ready to focus!`;
+                    
+                    const granted = await onRequestNotificationPermission();
+                    if (granted) {
+                        onSendLocalReminder(notificationTitle, notificationBody, 0); // Send immediately
+                    } else {
+                        console.warn("Notification permission not granted for break end reminder.");
+                    }
+                }, timeToScheduleNotification);
+            }
+        }
+    }, [timer.timeLeft, timer.isRunning, sessionType, onRequestNotificationPermission, onSendLocalReminder]); // Dependencies
+
 
     // Handles the completion of a FOCUS session
     const handleFocusSessionCompletion = useCallback(async () => {
@@ -70,9 +188,11 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
             timer.pause();
             setShowContinueSessionPrompt(true);
         } else {
+            // Start the next break after a short delay
             setTimeout(() => {
-                setSessionType('break');
-                timer.setDuration((pomodoroCount + 1) % 4 === 0 ? longBreakDuration : breakDuration);
+                const nextSessionType = (pomodoroCount + 1) % 4 === 0 ? 'longBreak' : 'shortBreak';
+                setSessionType(nextSessionType); // Set specific break type
+                timer.setDuration(nextSessionType === 'longBreak' ? longBreakDuration : breakDuration);
                 timer.start();
             }, 2000);
         }
@@ -81,26 +201,64 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
     // Handles the completion of a BREAK session
     const handleBreakSessionCompletion = useCallback(async () => {
         const notificationTitle = 'Break Over!';
-        const notificationBody = `Time to get back to focus. Ready for session ${pomodoroCount + 1}?`;
+        // Request permission here for immediacy if not already granted
+        const granted = await onRequestNotificationPermission(); 
 
-        const granted = await onRequestNotificationPermission();
-        if (granted) {
-            onSendLocalReminder(notificationTitle, notificationBody, 0);
+        timer.pause(); // Always pause the timer when break ends
+        
+        setSessionType('focus');
+        timer.setDuration(remainingFocusTimeBeforeBreak > 0 ? remainingFocusTimeBeforeBreak : focusDuration);
+        setRemainingFocusTimeBeforeBreak(0); // Reset stored time
+
+        // Clear any pre-existing modal interaction timeout, just in case
+        if (modalInteractionTimeoutRef.current) {
+            clearTimeout(modalInteractionTimeoutRef.current);
+            modalInteractionTimeoutRef.current = null;
         }
+        setIsBreakCooldownActive(false); // Ensure this is false initially for either path
 
-        setTimeout(() => {
-            timer.pause();
-            setSessionType('focus');
-            timer.setDuration(remainingFocusTimeBeforeBreak > 0 ? remainingFocusTimeBeforeBreak : focusDuration); 
-            setRemainingFocusTimeBeforeBreak(0);
-            
-            if (!document.fullscreenElement) {
-                setShowFullscreenPromptModal(true);
-            } else {
-                timer.start();
+
+        // Check user's visibility state at the exact moment the break ends
+        if (document.visibilityState === 'hidden') {
+            // User is NOT on the tab. Start a cooldown for them to return.
+            setIsBreakCooldownActive(true); // Activate the cooldown state
+            if (granted) {
+                onSendLocalReminder(notificationTitle, "You have 10 seconds to return to the Synitheia tab or you will be penalized!", 0);
             }
-        }, 2000);
-    }, [pomodoroCount, remainingFocusTimeBeforeBreak, focusDuration, onRequestNotificationPermission, onSendLocalReminder, timer]);
+
+            // Set a 10-second timeout for the user to return to the tab
+            modalInteractionTimeoutRef.current = setTimeout(() => {
+                // Check visibility again after cooldown. If still hidden AND cooldown is active, penalize.
+                if (document.visibilityState === 'hidden' && isBreakCooldownActiveRef.current) {
+                    onRewardPointsEarned(-20);
+                    if (granted) {
+                        onSendLocalReminder("Focus Violation!", "20 points deducted for not returning to the Synitheia tab after break cooldown!", 0);
+                    }
+                    resetTimer(); // Penalize and reset the session
+                }
+                modalInteractionTimeoutRef.current = null; 
+            }, 10 * 1000); // 10 seconds for user to return
+        } else {
+            // User IS on the tab. Immediately show the "Resume Focus" modal.
+            setShowFullscreenPromptModal(true); // This will pause the timer via useTimer's shouldPause
+            if (granted) {
+                onSendLocalReminder(notificationTitle, "Time to get back to focus. Please choose to resume.", 0);
+            }
+
+            // Set a 10-second timeout for the user to interact with the modal
+            modalInteractionTimeoutRef.current = setTimeout(async () => { // Made async to await notification permission
+                // If the modal is still showing and the tab is visible (meaning no interaction), penalize.
+                if (showFullscreenPromptModalRef.current && document.visibilityState === 'visible') {
+                    // *** PENALTY REMOVED HERE ***
+                    // Per user's request: No penalty for *just* not choosing when modal is up and user is visible.
+                    // The modal will persist.
+                    // However, if the user leaves the tab after the modal pops up, the visibilitychange listener will penalize.
+                }
+                modalInteractionTimeoutRef.current = null; // Clear timeout ID
+            }, 10 * 1000); // 10 seconds for modal interaction (no penalty here for not choosing)
+        }
+    }, [pomodoroCount, remainingFocusTimeBeforeBreak, focusDuration, onRequestNotificationPermission, onSendLocalReminder, timer, onRewardPointsEarned, resetTimer]);
+
 
     // Main session end dispatcher
     const handleSessionEnd = useCallback(async () => {
@@ -112,7 +270,7 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
 
         if (sessionType === 'focus') {
             await handleFocusSessionCompletion();
-        } else { // sessionType === 'break'
+        } else { // sessionType is 'shortBreak' or 'longBreak'
             await handleBreakSessionCompletion();
         }
     }, [sessionType, handleFocusSessionCompletion, handleBreakSessionCompletion]);
@@ -122,26 +280,6 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         handleSessionEndRef.current = handleSessionEnd;
     }, [handleSessionEnd]);
 
-
-    const resetTimer = useCallback(() => {
-        timer.reset(focusDuration);
-        setSessionType('focus');
-        setPomodoroCount(0);
-        setSelectedHabitId('');
-        setBreaksTakenInCurrentFocus(0);
-        setEventHandledForCurrentInterruption(false); 
-        setRemainingFocusTimeBeforeBreak(0); 
-        
-        if (document.fullscreenElement) {
-            document.exitFullscreen().catch(err => console.error("Error exiting fullscreen on reset:", err));
-        }
-        isFocusActiveAndFullScreen.current = false;
-        setShowExitConfirmationModal(false);
-        isConfirmingExit.current = false;
-        setShowFullscreenPromptModal(false);
-        setShowSessionCountInput(true); // Return to setup screen on full reset
-        setShowContinueSessionPrompt(false);
-    }, [focusDuration, timer]);
 
     const handleConfirmExit = useCallback(() => {
         onRewardPointsEarned(-20);
@@ -167,7 +305,6 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         isFocusActiveAndFullScreen.current = true; 
         const success = await enforceFullscreen(); // Call the wrapped enforceFullscreen
         if (!success) { // If fullscreen fails, reset expectation as it won't be active
-            isFocusActiveAndFullScreen.current = false;
             onSendLocalReminder("Fullscreen Reminder", "Click 'Go FullScreen' to re-enter fullscreen for focus mode.", 0);
         }
         timer.start(); // Resume timer
@@ -175,33 +312,46 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
 
 
     const handlePromptGoFullscreen = useCallback(async () => {
-        setShowFullscreenPromptModal(false);
-        // Proactively set fullscreen expectation before requesting fullscreen
-        isFocusActiveAndFullScreen.current = true; 
-        const success = await enforceFullscreen(); // Call the wrapped enforceFullscreen
-        if (!success) { // If fullscreen fails, reset expectation as it won't be active
-            isFocusActiveAndFullScreen.current = false;
-            onSendLocalReminder("Fullscreen Reminder", "Failed to enter fullscreen automatically. Please click 'Go FullScreen' manually if you wish to enforce focus.", 0);
+        setShowFullscreenPromptModal(false); // Hide modal as user is taking action
+        // Clear any pending modal interaction/cooldown timeouts
+        if (modalInteractionTimeoutRef.current) {
+            clearTimeout(modalInteractionTimeoutRef.current);
+            modalInteractionTimeoutRef.current = null;
         }
-        timer.start(); // Resume timer regardless of fullscreen success for immediate user feedback
+        setIsBreakCooldownActive(false); // Ensure cooldown is off if user was returning during it
+
+        isFocusActiveAndFullScreen.current = true; // Proactively set expectation
+        const success = await enforceFullscreen(); 
+        if (!success) { 
+            onSendLocalReminder("Fullscreen Request Failed", "Please click 'Go FullScreen' manually if you wish to enforce focus.", 0);
+        }
+        timer.start(); // Start the timer
     }, [enforceFullscreen, onSendLocalReminder, timer]);
 
     const handlePromptContinueWithoutFullscreen = useCallback(() => {
-        setShowFullscreenPromptModal(false);
-        onRewardPointsEarned(-20);
+        setShowFullscreenPromptModal(false); // Hide modal as user is taking action
+        // Clear any pending modal interaction/cooldown timeouts
+        if (modalInteractionTimeoutRef.current) {
+            clearTimeout(modalInteractionTimeoutRef.current);
+            modalInteractionTimeoutRef.current = null;
+        }
+        setIsBreakCooldownActive(false); // Ensure cooldown is off if user was returning during it
+
+        onRewardPointsEarned(-20); 
         onSendLocalReminder(
             "Focus Interruption!", 
             "20 points deducted for continuing focus mode outside of fullscreen. Stay focused!", 
             0
         );
         setBreaksTakenInCurrentFocus(prev => prev + 1);
-        timer.start();
-    }, [onRewardPointsEarned, onSendLocalReminder]);
+        timer.start(); // Start the timer
+    }, [onRewardPointsEarned, onSendLocalReminder, timer]);
 
     // Combined useEffect for fullscreen and visibility changes
     useEffect(() => {
-        const handleFullscreenOrVisibilityChange = () => {
+        const handleFullscreenOrVisibilityChange = async () => { // Made async to await notification permission
             const isHidden = document.visibilityState === 'hidden';
+            const isVisible = document.visibilityState === 'visible';
             const fullscreenExited = !document.fullscreenElement && isFocusActiveAndFullScreen.current && sessionType === 'focus';
 
             // If we are currently attempting fullscreen via enforceFullscreen, ignore this event
@@ -210,31 +360,56 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
             }
 
             // Logic for manual fullscreen exit during active focus session
-            // Ensure we are in a focus session, timer is running, and it's not already handled or confirming
-            if (fullscreenExited && timer.isRunning && !eventHandledForCurrentInterruption && !isConfirmingExit.current && !showFullscreenPromptModal && !showContinueSessionPrompt) {
+            if (fullscreenExited && timer.isRunning && !eventHandledForCurrentInterruption && !isConfirmingExit.current && !showFullscreenPromptModalRef.current && !showContinueSessionPrompt) {
                 timer.pause();
                 setShowExitConfirmationModal(true);
                 isConfirmingExit.current = true;
             } 
-            // Logic for tab switching/page hidden during active focus session, or when fullscreen prompt is showing
+            // Logic for tab switching/page hidden during active focus session, or when a modal/cooldown is active
             else if (isHidden && (
-                (sessionType === 'focus' && timer.isRunning && !showFullscreenPromptModal && !showContinueSessionPrompt) ||
+                (sessionType === 'focus' && timer.isRunning && !showFullscreenPromptModalRef.current && !showContinueSessionPrompt) ||
                 showExitConfirmationModal || 
                 isConfirmingExit.current ||
-                showFullscreenPromptModal // Deduct points if tab is switched while fullscreen prompt is active
+                showContinueSessionPrompt || // If hidden during "Continue Session" prompt
+                // Penalty for switching tab *while* showFullscreenPromptModal is active and user was present (not in cooldown)
+                (showFullscreenPromptModalRef.current && !isBreakCooldownActiveRef.current) || 
+                isBreakCooldownActiveRef.current // If in break cooldown (user was initially hidden) and tab remains hidden
             )) {
                 onRewardPointsEarned(-20); 
-                onSendLocalReminder(
-                    "Focus Violation!", 
-                    "20 points deducted for leaving focus mode (tab switched/hidden). Session reset.", 
-                    0
-                );
+                const granted = await onRequestNotificationPermission(); // Request permission within the async callback
+                if (granted) {
+                    onSendLocalReminder(
+                        "Focus Violation!", 
+                        "20 points deducted for leaving focus mode (tab switched/hidden). Session reset.", 
+                        0
+                    );
+                }
                 setBreaksTakenInCurrentFocus(prev => prev + 1);
                 resetTimer(); 
             }
+            // NEW: If user returns to the tab while `isBreakCooldownActive` (meaning they were previously hidden after break)
+            else if (isVisible && isBreakCooldownActiveRef.current) { // Use ref here
+                // Clear the pending cooldown penalty timeout
+                if (modalInteractionTimeoutRef.current) {
+                    clearTimeout(modalInteractionTimeoutRef.current);
+                    modalInteractionTimeoutRef.current = null;
+                }
+                setIsBreakCooldownActive(false); // Cooldown ends as user is back
+                setShowFullscreenPromptModal(true); // Immediately show the "Resume Focus" modal
+                // Start a new timeout for modal interaction
+                modalInteractionTimeoutRef.current = setTimeout(async () => { // Made async to await notification permission
+                    if (showFullscreenPromptModalRef.current && document.visibilityState === 'visible') { // Use ref here
+                        // *** PENALTY REMOVED HERE ***
+                        // Per user's request: No penalty for *just* not choosing when modal is up and user is visible.
+                        // The modal will persist.
+                    }
+                    modalInteractionTimeoutRef.current = null;
+                }, 10 * 1000); // 10 seconds for modal interaction (no penalty here for not choosing)
+            }
+
 
             // Update fullscreen expectation based on current state and session type/running status
-            if (document.fullscreenElement && sessionType === 'focus' && timer.isRunning && !isConfirmingExit.current && !showFullscreenPromptModal && !showContinueSessionPrompt) {
+            if (document.fullscreenElement && sessionType === 'focus' && timer.isRunning && !isConfirmingExit.current && !showFullscreenPromptModalRef.current && !showContinueSessionPrompt) {
                 isFocusActiveAndFullScreen.current = true;
                 setEventHandledForCurrentInterruption(false); // Reset for potential future exits
             } 
@@ -244,7 +419,7 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
             }
 
             // Ensure fullscreen is exited if session type is not focus or timer is not running
-            if ((sessionType !== 'focus' || !timer.isRunning) && document.fullscreenElement && !isConfirmingExit.current && !showFullscreenPromptModal && !showContinueSessionPrompt) {
+            if ((sessionType !== 'focus' || !timer.isRunning) && document.fullscreenElement && !isConfirmingExit.current && !showFullscreenPromptModalRef.current && !showContinueSessionPrompt) {
                 document.exitFullscreen().catch(err => console.error("Error exiting fullscreen (cleanup):", err));
             }
         };
@@ -258,9 +433,10 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         };
     }, [
         sessionType, timer.isRunning, eventHandledForCurrentInterruption, 
-        showFullscreenPromptModal, showContinueSessionPrompt, showExitConfirmationModal,
+        showExitConfirmationModal, showContinueSessionPrompt,
         onRewardPointsEarned, onSendLocalReminder, setBreaksTakenInCurrentFocus, resetTimer, timer,
-        isFullscreenAttemptInProgress.current
+        isFullscreenAttemptInProgress.current,
+        onRequestNotificationPermission // Added to dependencies for async call
     ]);
 
     const changeSession = useCallback((type) => {
@@ -281,8 +457,8 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
             setRemainingFocusTimeBeforeBreak(0);
             // DO NOT auto-start here, user will click "Start Focus Session" from the setup form
             // or the "Start" button on the timer display
-        } else {
-            setSessionType('break');
+        } else { // type is 'shortBreak' or 'longBreak'
+            setSessionType(type); // Set to specific 'shortBreak' or 'longBreak'
             timer.setDuration(type === 'shortBreak' ? breakDuration : longBreakDuration);
             timer.start();
             if (document.fullscreenElement) {
@@ -307,8 +483,8 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         const minutes = parseInt(e.target.value, 10);
         const newDuration = Math.max(1, minutes) * 60;
         setBreakDuration(newDuration);
-        // Only update timer's duration if it's the current session type (break) and not running
-        if (sessionType !== 'focus' && !timer.isRunning) {
+        // Only update timer's duration if it's a 'shortBreak' (as this input is for short break) and not running
+        if (sessionType === 'shortBreak' && !timer.isRunning) { // Changed condition to shortBreak
             timer.setDuration(newDuration);
         }
     }, [sessionType, timer]); 
@@ -317,8 +493,8 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         const minutes = parseInt(e.target.value, 10);
         const newDuration = Math.max(1, minutes) * 60;
         setLongBreakDuration(newDuration);
-        // Only update timer's duration if it's a break session and not running
-        if (sessionType !== 'focus' && !timer.isRunning) {
+        // Only update timer's duration if it's a 'longBreak' (as this input is for long break) and not running
+        if (sessionType === 'longBreak' && !timer.isRunning) { // Changed condition to longBreak
             timer.setDuration(newDuration);
         }
     }, [sessionType, timer]); 
@@ -343,7 +519,6 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
             isFocusActiveAndFullScreen.current = true;
             const success = await enforceFullscreen();
             if (!success) {
-                isFocusActiveAndFullScreen.current = false;
                 onSendLocalReminder("Fullscreen Request Failed", "Please click 'Go FullScreen' manually to enforce focus mode.", 0);
             }
         }
@@ -355,8 +530,9 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         setTotalSessionsToComplete(prev => prev + 1);
         setShowContinueSessionPrompt(false);
         setTimeout(() => {
-            setSessionType('break');
-            timer.setDuration((pomodoroCount + 1) % 4 === 0 ? longBreakDuration : breakDuration);
+            const nextSessionType = (pomodoroCount + 1) % 4 === 0 ? 'longBreak' : 'shortBreak';
+            setSessionType(nextSessionType); // Set specific break type
+            timer.setDuration(nextSessionType === 'longBreak' ? longBreakDuration : breakDuration);
             timer.start();
         }, 500);
     }, [timer, pomodoroCount, breakDuration, longBreakDuration]);
@@ -366,15 +542,18 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         resetTimer();
     }, [resetTimer]);
 
-    // Memoized selection of a motivational message
-    const motivationalMessages = {
-        'focus': ["Deep work fuels great achievements.", "Stay sharp, stay focused.", "Every minute counts. Make it count for you.", "Distraction is the enemy of progress.", "You've got this!"],
-        'break': ["Breathe. Recharge. Reset.", "A quick pause makes you stronger.", "Stretch it out, you earned it.", "Ready for the next sprint?", "Enjoy your well-deserved rest.", "Relax, reflect, re-energize.", "You're building momentum!"]
-    };
     const currentMotivationalMessage = useCallback(() => {
+        console.log("Current sessionType for motivational message:", sessionType); // Debug log
         const messages = motivationalMessages[sessionType];
+        
+        // Defensive check: if messages array is not found or empty, return a fallback
+        if (!messages || messages.length === 0) {
+            console.warn(`No motivational messages found for sessionType: "${sessionType}". Falling back to a default.`);
+            return "Stay focused and productive!"; 
+        }
+
         return messages[Math.floor(Math.random() * messages.length)];
-    }, [sessionType, pomodoroCount, breaksTakenInCurrentFocus]); // Depend on relevant states for re-selection
+    }, [sessionType, pomodoroCount, breaksTakenInCurrentFocus]); 
 
     return {
         // State
@@ -393,15 +572,14 @@ const useFocusModeLogic = ({ habits, onCheckIn, onRequestNotificationPermission,
         showContinueSessionPrompt,
         
         // Functions
-        startTimer: timer.start, // Reverted to raw timer.start as handleInitialStart is the new trigger
-        // pauseTimer: timer.pause, // Still not exposed for the UI, as requested
+        startTimer: timer.start, 
         resetTimer,
         setSelectedHabitId,
         handleFocusDurationChange,
         handleBreakDurationChange,
         handleLongBreakDurationChange,
         handleTotalSessionsChange,
-        handleInitialStart, // This is now the primary "Start" for the setup phase
+        handleInitialStart, 
         handleConfirmExit,
         handleCancelExit,
         handlePromptGoFullscreen,

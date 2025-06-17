@@ -21,23 +21,23 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
     const [description, setDescription] = useState(isEditMode ? habitToEdit.description : '');
     const [timesPerDay, setTimesPerDay] = useState(isEditMode ? habitToEdit.timesPerDay : 1);
     const [difficulty, setDifficulty] = useState(isEditMode ? habitToEdit.difficulty : 'medium');
-    const [timeTaken, setTimeTaken] = useState(isEditMode ? habitToEdit.timeTaken : 15);
+    const [timeTaken, setTimeTaken] = useState(isEditMode ? habitToEdit.timeTaken : (initialType === 'good' ? 15 : 0)); // Set timeTaken to 0 for bad habits
     const [type, setType] = useState(initialType); // Use initialType for state, no longer a selectable input
     const [reminderTime, setReminderTime] = useState(isEditMode && habitToEdit.reminderTime ? habitToEdit.reminderTime : '');
 
     // States for the flexible Period feature
-    const [repeatType, setRepeatType] = useState(isEditMode ? habitToEdit.period.type : 'daily');
+    const [repeatType, setRepeatType] = useState(isEditMode && habitToEdit.period ? habitToEdit.period.type : 'daily');
     const [selectedDaysOfWeek, setSelectedDaysOfWeek] = useState(
-        isEditMode && habitToEdit.period.config?.selectedDaysOfWeek 
+        isEditMode && habitToEdit.period?.config?.selectedDaysOfWeek 
             ? habitToEdit.period.config.selectedDaysOfWeek 
             : DAYS_OF_WEEK.map((_, index) => index) // Default: Everyday
     );
     const [selectedDaysOfMonth, setSelectedDaysOfMonth] = useState(
-        isEditMode && habitToEdit.period.config?.selectedDaysOfMonth
+        isEditMode && habitToEdit.period?.config?.selectedDaysOfMonth
             ? habitToEdit.period.config.selectedDaysOfMonth
             : [1] // Default: 1st of month
     );
-    const [intervalDays, setIntervalDays] = useState(isEditMode && habitToEdit.period.config?.intervalDays ? habitToEdit.period.config.intervalDays : 2);
+    const [intervalDays, setIntervalDays] = useState(isEditMode && habitToEdit.period?.config?.intervalDays ? habitToEdit.period.config.intervalDays : 2);
 
     // States for Label feature
     // Initial labels; in a real app, these would be loaded from user preferences/database
@@ -78,8 +78,8 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
             setDescription('');
             setTimesPerDay(1);
             setDifficulty('medium');
-            setTimeTaken(15);
-            setType('good'); // Default to good for new habits
+            setTimeTaken(initialType === 'good' ? 15 : 0); // Reset based on initialType
+            setType(initialType); // Default to initialType for new habits
             setReminderTime('');
             setRepeatType('daily');
             setSelectedDaysOfWeek(DAYS_OF_WEEK.map((_, index) => index));
@@ -89,7 +89,7 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
             setShowNewLabelInput(false);
             setNewLabelInputValue('');
         }
-    }, [habitToEdit, availableLabels]); // Re-run when habitToEdit or availableLabels change
+    }, [habitToEdit, availableLabels, initialType]); // Re-run when habitToEdit or availableLabels change
 
     const handleDayOfWeekToggle = (dayIndex) => {
         setSelectedDaysOfWeek(prev =>
@@ -143,9 +143,9 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
             setNewLabelInputValue(''); // Clear input field
             setShowNewLabelInput(false); // Hide the input field
         } else if (trimmedLabel) {
-            alert('Label already exists or is invalid.');
+            alert('Label already exists or is invalid.'); // TODO: Replace with custom modal
         } else {
-            alert('Please enter a label name.');
+            alert('Please enter a label name.'); // TODO: Replace with custom modal
         }
     };
 
@@ -153,7 +153,7 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!name.trim()) {
-            alert('Habit name cannot be empty.');
+            alert('Habit name cannot be empty.'); // TODO: Replace with custom modal
             return;
         }
 
@@ -162,10 +162,10 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
         if (showNewLabelInput && newLabelInputValue.trim()) {
             finalLabel = newLabelInputValue.trim();
         } else if (showNewLabelInput && !newLabelInputValue.trim()) {
-            alert('Please enter a new label or select an existing one.');
+            alert('Please enter a new label or select an existing one.'); // TODO: Replace with custom modal
             return;
         } else if (!selectedLabel && !showNewLabelInput) {
-            alert('Please select a label for the habit.');
+            alert('Please select a label for the habit.'); // TODO: Replace with custom modal
             return;
         }
 
@@ -175,25 +175,26 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
         if (repeatType === 'daily') {
             periodConfig = { type: 'daily', config: { selectedDaysOfWeek } };
             if (selectedDaysOfWeek.length === 0) {
-                alert('Please select at least one day of the week for Daily repeat.');
+                alert('Please select at least one day of the week for Daily repeat.'); // TODO: Replace with custom modal
                 return;
             }
         } else if (repeatType === 'monthly') {
             periodConfig = { type: 'monthly', config: { selectedDaysOfMonth } };
             if (selectedDaysOfMonth.length === 0) {
-                alert('Please select at least one day of the month for Monthly repeat.');
+                alert('Please select at least one day of the month for Monthly repeat.'); // TODO: Replace with custom modal
                 return;
             }
         } else { // interval
             periodConfig = { type: 'interval', config: { intervalDays } };
             if (intervalDays < 1) {
-                alert('Interval days must be at least 1.');
+                alert('Interval days must be at least 1.'); // TODO: Replace with custom modal
                 return;
             }
         }
 
         // Calculate reward points based on selected difficulty
         const calculatedRewardPoints = calculateRewardPoints(difficulty);
+        console.log(`[AddHabitForm] Calculated Reward Points for '${name}': ${calculatedRewardPoints}`);
 
         // Construct the habit data object
         const habitData = {
@@ -206,7 +207,7 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
             // timeTaken is now conditional
             timeTaken: type === 'good' ? parseInt(timeTaken, 10) : 0, 
             type: type, // Type is determined by the FAB or existing habit, not form input
-            rewardPoints: calculatedRewardPoints,
+            rewardPoints: calculatedRewardPoints, // Include calculated reward points
             label: finalLabel === 'None' ? '' : finalLabel, // Store 'None' as empty string
             createdAt: isEditMode && habitToEdit.createdAt ? habitToEdit.createdAt : new Date().toISOString(), // Preserve original creation date if editing
             reminderTime: reminderTime // Include reminder time
@@ -236,9 +237,9 @@ const AddHabitForm = ({ onRequestNotificationPermission, onSendLocalReminder, ha
                     `It's time for your habit: ${habitData.description || habitData.name}`,
                     delayMinutes
                 );
-                alert(`Reminder for '${habitData.name}' set for ${reminderTime} (${delayMinutes.toFixed(0)} mins from now if scheduled for today/tomorrow). Check console.`);
+                alert(`Reminder for '${habitData.name}' set for ${reminderTime} (${delayMinutes.toFixed(0)} mins from now if scheduled for today/tomorrow). Check console.`); // TODO: Replace with custom modal
             } else {
-                alert('Notification permission denied. Cannot set reminders.');
+                alert('Notification permission denied. Cannot set reminders.'); // TODO: Replace with custom modal
             }
         }
 
