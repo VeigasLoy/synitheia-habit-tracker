@@ -1,0 +1,156 @@
+body {
+  font-family: sans-serif;
+  background-color: #f4f4f4;
+  color: #333;
+  text-align: center;
+}
+
+.App {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.habit-form {
+  margin-bottom: 20px;
+}
+
+.habit-form input {
+  padding: 10px;
+  width: 70%;
+  margin-right: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.habit-form button {
+  padding: 10px;
+  border: none;
+  background-color: #5cb85c;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.player-stats {
+  margin: 20px 0;
+  font-size: 1.2em;
+  font-weight: bold;
+  display: flex;
+  justify-content: space-around;
+}
+
+.progress-bar-container {
+  width: 100%;
+  background-color: #e0e0e0;
+  border-radius: 5px;
+  margin-bottom: 20px;
+}
+
+.progress-bar {
+  height: 20px;
+  background-color: #4caf50;
+  border-radius: 5px;
+  width: 0%;
+  transition: width 0.5s ease-in-out;
+}
+
+.habit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.achievements {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.achievements h2 {
+  margin-top: 0;
+}
+
+.achievements ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+.achievements li {
+  padding: 8px;
+  background-color: #f9f9f9;
+  border-bottom: 1px solid #eee;
+}
+
+.achievements li:last-child {
+  border-bottom: none;
+}
+
+.main-content {
+  display: flex;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.left-panel, .right-panel {
+  flex: 1;
+}
+
+.leaderboard {
+  padding: 20px;
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.leaderboard h2 {
+  margin-top: 0;
+}
+
+.leaderboard ol {
+  list-style-type: none;
+  padding: 0;
+}
+
+.leaderboard li {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  background-color: #f9f9f9;
+  border-bottom: 1px solid #eee;
+}
+
+.leaderboard li:last-child {
+  border-bottom: none;
+}
+
+.leaderboard .current-user {
+  font-weight: bold;
+  background-color: #dff0d8;
+}
+
+.habit {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.habit.completed span {
+  text-decoration: line-through;
+  color: #aaa;
+}
+
+.habit input[type="checkbox"] {
+  margin-right: 10px;
+}
+
+.habit .streak {
+  margin-left: auto;
+  font-weight: bold;
+  color: #f0ad4e;
+}
