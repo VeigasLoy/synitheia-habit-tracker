@@ -1,156 +1,230 @@
+/* Duolingo Inspired Styles */
+
+/* Variables for colors and fonts */
+:root {
+  --duo-green: #58CC02;
+  --duo-blue: #1cb0f6;
+  --duo-red: #e53838;
+  --duo-dark-gray: #4c4c4c;
+  --duo-gray: #a7a7a7;
+  --duo-light-gray: #e5e5e5;
+  --duo-bg: #f7f7f7;
+  --duo-font: 'Nunito', sans-serif;
+}
+
 body {
-  font-family: sans-serif;
-  background-color: #f4f4f4;
-  color: #333;
+  font-family: var(--duo-font);
+  background-color: var(--duo-bg);
+  color: var(--duo-dark-gray);
   text-align: center;
+  margin: 0;
+  padding: 0;
 }
 
 .App {
-  max-width: 600px;
-  margin: 0 auto;
+  max-width: 800px;
+  margin: 20px auto;
   padding: 20px;
 }
 
-.habit-form {
+h1 {
+  font-size: 2.5em;
+  font-weight: 900;
+  color: var(--duo-dark-gray);
   margin-bottom: 20px;
 }
 
-.habit-form input {
-  padding: 10px;
-  width: 70%;
-  margin-right: 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.habit-form button {
-  padding: 10px;
-  border: none;
-  background-color: #5cb85c;
-  color: white;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
+/* Player Stats & Progress Bar */
 .player-stats {
-  margin: 20px 0;
-  font-size: 1.2em;
-  font-weight: bold;
   display: flex;
   justify-content: space-around;
+  align-items: center;
+  background-color: white;
+  border: 2px solid var(--duo-light-gray);
+  border-radius: 16px;
+  padding: 10px 20px;
+  margin-bottom: 10px;
+  font-size: 1.2em;
+  font-weight: 700;
 }
 
 .progress-bar-container {
   width: 100%;
-  background-color: #e0e0e0;
-  border-radius: 5px;
-  margin-bottom: 20px;
+  background-color: var(--duo-light-gray);
+  border-radius: 12px;
+  height: 24px;
+  margin-bottom: 30px;
+  overflow: hidden; /* Ensures the inner bar has rounded corners */
 }
 
 .progress-bar {
-  height: 20px;
-  background-color: #4caf50;
-  border-radius: 5px;
-  width: 0%;
+  height: 100%;
+  background-color: var(--duo-green);
+  border-radius: 12px;
   transition: width 0.5s ease-in-out;
 }
 
+/* Habit Form */
+.habit-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+}
+
+.habit-form input {
+  flex-grow: 1;
+  padding: 15px;
+  border: 2px solid var(--duo-light-gray);
+  border-radius: 12px;
+  font-size: 1em;
+  font-family: var(--duo-font);
+  font-weight: 700;
+}
+
+.habit-form input:focus {
+  outline: none;
+  border-color: var(--duo-blue);
+}
+
+.habit-form button {
+  padding: 15px 25px;
+  border: none;
+  background-color: var(--duo-green);
+  color: white;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 1.1em;
+  font-weight: 700;
+  text-transform: uppercase;
+  border-bottom: 4px solid #4aa001; /* Darker green for 3D effect */
+  transition: background-color 0.2s, transform 0.2s;
+}
+
+.habit-form button:hover {
+  background-color: #61e002;
+}
+
+.habit-form button:active {
+  transform: translateY(2px);
+  border-bottom-width: 2px;
+}
+
+
+/* Habit List & Items */
 .habit-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.achievements {
-  margin-top: 30px;
-  padding: 20px;
-  background-color: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.achievements h2 {
-  margin-top: 0;
-}
-
-.achievements ul {
-  list-style-type: none;
-  padding: 0;
-}
-
-.achievements li {
-  padding: 8px;
-  background-color: #f9f9f9;
-  border-bottom: 1px solid #eee;
-}
-
-.achievements li:last-child {
-  border-bottom: none;
-}
-
-.main-content {
-  display: flex;
-  gap: 20px;
-  margin-top: 20px;
-}
-
-.left-panel, .right-panel {
-  flex: 1;
-}
-
-.leaderboard {
-  padding: 20px;
-  background-color: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.leaderboard h2 {
-  margin-top: 0;
-}
-
-.leaderboard ol {
-  list-style-type: none;
-  padding: 0;
-}
-
-.leaderboard li {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px;
-  background-color: #f9f9f9;
-  border-bottom: 1px solid #eee;
-}
-
-.leaderboard li:last-child {
-  border-bottom: none;
-}
-
-.leaderboard .current-user {
-  font-weight: bold;
-  background-color: #dff0d8;
+  gap: 15px;
 }
 
 .habit {
   display: flex;
   align-items: center;
-  padding: 10px;
+  padding: 20px;
   background-color: white;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 2px solid var(--duo-light-gray);
+  border-radius: 16px;
+  font-size: 1.2em;
+  font-weight: 700;
 }
 
 .habit.completed span {
   text-decoration: line-through;
-  color: #aaa;
+  color: var(--duo-gray);
 }
 
 .habit input[type="checkbox"] {
-  margin-right: 10px;
+  /* Hide default checkbox */
+  appearance: none;
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--duo-light-gray);
+  border-radius: 50%;
+  margin-right: 15px;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.2s, border-color 0.2s;
 }
+
+.habit input[type="checkbox"]:checked {
+  background-color: var(--duo-green);
+  border-color: var(--duo-green);
+}
+
+.habit input[type="checkbox"]:checked::after {
+  content: '✔';
+  color: white;
+  font-size: 20px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
 
 .habit .streak {
   margin-left: auto;
-  font-weight: bold;
-  color: #f0ad4e;
+  font-weight: 900;
+  color: #f0ad4e; /* Duolingo yellow/orange for streaks */
+}
+
+/* Main Content Layout (Achievements & Leaderboard) */
+.main-content {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-top: 30px;
+}
+
+@media (min-width: 768px) {
+  .main-content {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.achievements, .leaderboard {
+  padding: 20px;
+  background-color: white;
+  border: 2px solid var(--duo-light-gray);
+  border-radius: 16px;
+}
+
+.achievements h2, .leaderboard h2 {
+  margin-top: 0;
+  font-size: 1.5em;
+  font-weight: 900;
+  color: var(--duo-dark-gray);
+  border-bottom: 2px solid var(--duo-light-gray);
+  padding-bottom: 10px;
+  margin-bottom: 15px;
+}
+
+.achievements ul, .leaderboard ol {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.achievements li, .leaderboard li {
+  padding: 12px 0;
+  font-weight: 700;
+  border-bottom: 2px solid var(--duo-light-gray);
+}
+
+.achievements li:last-child, .leaderboard li:last-child {
+  border-bottom: none;
+}
+
+.leaderboard li {
+  display: flex;
+  justify-content: space-between;
+}
+
+.leaderboard .current-user {
+  background-color: #e8f8d8;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--duo-green);
+  font-weight: 900;
 }
