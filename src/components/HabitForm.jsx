@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { FiPlus } from 'react-icons/fi';
 
 const HabitForm = ({ onAddHabit }) => {
   const [name, setName] = useState('');
@@ -15,11 +16,15 @@ const HabitForm = ({ onAddHabit }) => {
     <form onSubmit={handleSubmit} className="habit-form">
       <input
         type="text"
-        placeholder="Add a new habit..."
+        placeholder="What new habit will you build?"
         value={name}
         onChange={(e) => setName(e.target.value)}
+        className="habit-input"
       />
-      <button type="submit">Add Habit</button>
+      <button type="submit" className="add-habit-btn">
+        <FiPlus />
+        <span>Add Habit</span>
+      </button>
     </form>
   );
 };

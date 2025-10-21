@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import HabitList from './components/HabitList';
 import HabitForm from './components/HabitForm';
 import Stats from './components/Stats';
+import { AnimatePresence } from 'framer-motion';
 import ReflectionModal from './components/ReflectionModal';
 import './App.css';
 
@@ -17,32 +18,27 @@ const App = () => {
 
   // Load state from localStorage on initial render
   useEffect(() => {
-    const storedHabits = JSON.parse(localStorage.getItem('habits'));
-    if (storedHabits) {
-      setHabits(storedHabits);
-    }
+    const storedHabits = JSON.parse(localStorage.getItem('habits')) || [];
+    const storedStats = JSON.parse(localStorage.getItem('userStats')) || { xp: 0, level: 1, streakFreezes: 1 };
 
-    const storedStats = JSON.parse(localStorage.getItem('userStats'));
-    if (storedStats) {
-      setUserStats(storedStats);
-    }
+    setHabits(storedHabits);
+    setUserStats(storedStats);
 
     // Check for missed days and apply streak freezes on load
     const today = new Date().toISOString().slice(0, 10);
     const yesterday = getYesterday();
-    const updatedHabits = habits.map(habit => {
+    const updatedHabits = storedHabits.map(habit => {
       if (habit.streak > 0 && habit.lastCompleted !== today && habit.lastCompleted !== yesterday) {
-        if (userStats.streakFreezes > 0) {
+        if (storedStats.streakFreezes > 0) {
           setUserStats(prev => ({ ...prev, streakFreezes: prev.streakFreezes - 1 }));
           return { ...habit, lastCompleted: yesterday }; // Pretend it was completed yesterday
         } else {
           return { ...habit, streak: 0 };
         }
       }
-      return habit;
+      return { ...habit, completedToday: habit.lastCompleted === today };
     });
     setHabits(updatedHabits);
-
   }, []);
 
   // Save state to localStorage whenever it changes
@@ -60,6 +56,7 @@ const App = () => {
       setUserStats((prevStats) => ({
         ...prevStats,
         level: prevStats.level + 1,
+        xp: prevStats.xp - xpToNextLevel, // Reset XP for the new level
         streakFreezes: prevStats.streakFreezes + 1, // Reward for leveling up
       }));
     }
@@ -124,8 +121,9 @@ const App = () => {
 
   return (
     <div className="app-container">
-      <header>
-        <h1>Mindful Habit Tracker</h1>
+      <header className="app-header">
+        <h1>Mindful Tracker</h1>
+        <p>Build habits that last. One day at a time.</p>
       </header>
       <main>
         <Stats
@@ -133,15 +131,20 @@ const App = () => {
           xp={userStats.xp}
           streakFreezes={userStats.streakFreezes}
         />
-        <HabitForm onAddHabit={addHabit} />
-        <HabitList habits={habits} onCheckIn={handleCheckIn} />
+        <div className="habits-section">
+          <h2>Your Habits</h2>
+          <HabitForm onAddHabit={addHabit} />
+          <HabitList habits={habits} onCheckIn={handleCheckIn} />
+        </div>
       </main>
-      {showReflectionModal && (
-        <ReflectionModal
-          onSave={handleSaveReflection}
-          onCancel={handleCancelReflection}
-        />
-      )}
+      <AnimatePresence>
+        {showReflectionModal && (
+          <ReflectionModal
+            onSave={handleSaveReflection}
+            onCancel={handleCancelReflection}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
